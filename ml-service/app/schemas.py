@@ -41,4 +41,5 @@ class PredictResponse(BaseModel):
     class_probabilities: dict[str, float]
     feature_importance: list[FeatureImportanceItem]
     safety_override: Optional[SafetyOverride] = None
+    model_type: str
     model_version: str

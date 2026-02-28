@@ -143,12 +143,39 @@ const buildGeneratedDonors = (count) => {
 
 const allDonors = [...donors, ...buildGeneratedDonors(60)];
 
+const buildMedicalTimeline = (donor, index) => {
+  const baseHemoglobin = Number(donor.hemoglobin);
+  const oldestShift = ((index % 5) - 2) * 0.4;
+  const midShift = ((index % 3) - 1) * 0.3;
+
+  const clampHb = (value) => Number(Math.max(10.2, Math.min(16.0, value)).toFixed(1));
+
+  return [
+    {
+      recordedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * (90 + (index % 7))),
+      hemoglobin: clampHb(baseHemoglobin + oldestShift),
+      chronicConditions: [],
+    },
+    {
+      recordedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * (35 + (index % 5))),
+      hemoglobin: clampHb(baseHemoglobin + midShift),
+      chronicConditions:
+        index % 11 === 0 ? ["asthma"] : donor.chronicConditions.filter((item) => item === "asthma"),
+    },
+    {
+      recordedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * (index % 4)),
+      hemoglobin: baseHemoglobin,
+      chronicConditions: donor.chronicConditions || [],
+    },
+  ];
+};
+
 const run = async () => {
   await connectDb();
   await User.deleteMany({});
   await MedicalLog.deleteMany({});
 
-  for (const donor of allDonors) {
+  for (const [index, donor] of allDonors.entries()) {
     const user = await User.create({
       name: donor.name,
       bloodGroup: donor.bloodGroup,
@@ -159,16 +186,24 @@ const run = async () => {
       location: donor.location,
     });
 
-    await createMedicalLog({
-      userId: String(user._id),
-      hemoglobin: donor.hemoglobin,
-      chronicConditions: donor.chronicConditions || [],
-      recordedAt: new Date(),
-    });
+    const timeline = buildMedicalTimeline(donor, index).sort(
+      (a, b) => a.recordedAt.getTime() - b.recordedAt.getTime()
+    );
+
+    for (const log of timeline) {
+      await createMedicalLog({
+        userId: String(user._id),
+        hemoglobin: log.hemoglobin,
+        chronicConditions: log.chronicConditions,
+        recordedAt: log.recordedAt,
+      });
+    }
   }
 
   // eslint-disable-next-line no-console
-  console.log(`Seeded ${allDonors.length} users and medical logs.`);
+  console.log(
+    `Seeded ${allDonors.length} users and ${allDonors.length * 3} medical logs.`
+  );
   await mongoose.connection.close();
 };
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 import joblib
 import numpy as np
@@ -22,6 +24,7 @@ FEATURE_ORDER = [
     "heart_rate",
 ]
 
+MODEL_CHOICES = ("random_forest", "xgboost")
 RISK_MAP = {"low": 0, "medium": 1, "high": 2}
 INVERSE_RISK_MAP = {value: key for key, value in RISK_MAP.items()}
 
@@ -155,14 +158,13 @@ def _load_or_create_dataset(dataset_path: Path) -> pd.DataFrame:
         normalized["blood_glucose"], glucose_transform = _normalize_blood_glucose_series(
             normalized["blood_glucose"]
         )
-        normalized["body_temp"], temp_transform = _normalize_body_temp_series(
-            normalized["body_temp"]
-        )
+        normalized["body_temp"], temp_transform = _normalize_body_temp_series(normalized["body_temp"])
         normalized.attrs["unit_transforms"] = {
             "blood_glucose": glucose_transform,
             "body_temp": temp_transform,
         }
         return normalized
+
     generated = _generate_dummy_dataset()
     generated.attrs["unit_transforms"] = {
         "blood_glucose": "mgdl",
@@ -203,12 +205,57 @@ def _age_group_accuracy(ages: pd.Series, true_y: np.ndarray, pred_y: np.ndarray)
     return metrics
 
 
+def _build_model(model_type: str, random_state: int):
+    if model_type == "random_forest":
+        return RandomForestClassifier(
+            n_estimators=350,
+            random_state=random_state,
+            max_depth=10,
+            min_samples_leaf=2,
+            class_weight="balanced_subsample",
+        )
+
+    if model_type == "xgboost":
+        try:
+            from xgboost import XGBClassifier
+        except ImportError as error:
+            raise ValueError(
+                "xgboost is not installed in this environment. Install dependencies first."
+            ) from error
+
+        return XGBClassifier(
+            objective="multi:softprob",
+            num_class=3,
+            n_estimators=420,
+            learning_rate=0.05,
+            max_depth=6,
+            min_child_weight=2,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            reg_lambda=1.2,
+            eval_metric="mlogloss",
+            random_state=random_state,
+        )
+
+    raise ValueError(f"Unsupported model_type: {model_type}. Allowed: {MODEL_CHOICES}")
+
+
+def _normalize_model_type(model_type: str) -> str:
+    normalized = str(model_type).strip().lower()
+    if normalized not in MODEL_CHOICES:
+        raise ValueError(f"Unsupported model_type: {model_type}. Allowed: {MODEL_CHOICES}")
+    return normalized
+
+
 def train_and_save_model(
     model_path: Path,
     metrics_path: Path,
     dataset_path: Path,
     random_state: int = 42,
+    model_type: str = "random_forest",
+    report_path: Path | None = None,
 ) -> dict:
+    selected_model_type = _normalize_model_type(model_type)
     df = _load_or_create_dataset(dataset_path)
     df["risk_level_normalized"] = df["risk_level"].map(_normalize_risk_label)
     df["risk_target"] = df["risk_level_normalized"].map(RISK_MAP)
@@ -225,7 +272,6 @@ def train_and_save_model(
 
     X = df[FEATURE_ORDER].copy()
     y = df["risk_target"].astype(int).to_numpy()
-
     x_train, x_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=random_state, stratify=y
     )
@@ -235,13 +281,7 @@ def train_and_save_model(
     x_test = _apply_bounds(x_test, clip_bounds)
 
     sample_weights = _age_group_weights(x_train["age"])
-    model = RandomForestClassifier(
-        n_estimators=350,
-        random_state=random_state,
-        max_depth=10,
-        min_samples_leaf=2,
-        class_weight="balanced_subsample",
-    )
+    model = _build_model(selected_model_type, random_state)
     model.fit(x_train, y_train, sample_weight=sample_weights)
 
     predictions = model.predict(x_test)
@@ -255,8 +295,10 @@ def train_and_save_model(
         output_dict=True,
         target_names=[INVERSE_RISK_MAP[0], INVERSE_RISK_MAP[1], INVERSE_RISK_MAP[2]],
     )
+    weighted_f1 = float(report["weighted avg"]["f1-score"])
     age_bias_metrics = _age_group_accuracy(x_test["age"], y_test, predictions)
-    raw_importances = getattr(model, "feature_importances_", np.zeros(len(FEATURE_ORDER)))
+
+    raw_importances = np.abs(getattr(model, "feature_importances_", np.zeros(len(FEATURE_ORDER))))
     total_importance = float(np.sum(raw_importances)) or 1.0
     feature_importance = [
         {"feature": feature, "importance": float(round(value / total_importance, 4))}
@@ -265,11 +307,12 @@ def train_and_save_model(
     feature_importance.sort(key=lambda item: item["importance"], reverse=True)
 
     unit_transforms = df.attrs.get("unit_transforms", {})
-
     metrics = {
         "model_version": datetime.now(tz=timezone.utc).isoformat(),
+        "model_type": selected_model_type,
         "dataset_rows": int(len(df)),
         "test_accuracy": round(test_accuracy, 4),
+        "weighted_f1": round(weighted_f1, 4),
         "feature_units": {
             "blood_glucose": "mg/dL",
             "body_temp": "F",
@@ -289,6 +332,7 @@ def train_and_save_model(
 
     artifact = {
         "model": model,
+        "model_type": selected_model_type,
         "clip_bounds": clip_bounds,
         "feature_order": FEATURE_ORDER,
         "risk_labels": INVERSE_RISK_MAP,
@@ -296,14 +340,74 @@ def train_and_save_model(
         "example_prediction_probability_shape": list(probabilities.shape),
     }
 
+    resolved_report_path = report_path or (model_path.parent / "model_report.pdf")
     model_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
+
     joblib.dump(artifact, model_path)
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     generate_model_report_pdf(
-        output_path=model_path.parent / "model_report.pdf",
+        output_path=resolved_report_path,
         metrics=metrics,
         confusion_matrix_values=matrix.tolist(),
         feature_importance=feature_importance,
     )
     return metrics
+
+
+def train_and_compare_models(
+    model_path: Path,
+    metrics_path: Path,
+    dataset_path: Path,
+    comparison_path: Path | None = None,
+    model_types: Iterable[str] = MODEL_CHOICES,
+    random_state: int = 42,
+) -> dict:
+    resolved_comparison_path = comparison_path or (model_path.parent / "model_comparison.json")
+    resolved_report_path = model_path.parent / "model_report.pdf"
+
+    leaderboard = []
+    for model_type in model_types:
+        selected_model_type = _normalize_model_type(model_type)
+        candidate_model_path = model_path.parent / f"maternal_{selected_model_type}.joblib"
+        candidate_metrics_path = model_path.parent / f"metrics_{selected_model_type}.json"
+        candidate_report_path = model_path.parent / f"model_report_{selected_model_type}.pdf"
+
+        metrics = train_and_save_model(
+            model_path=candidate_model_path,
+            metrics_path=candidate_metrics_path,
+            dataset_path=dataset_path,
+            random_state=random_state,
+            model_type=selected_model_type,
+            report_path=candidate_report_path,
+        )
+
+        leaderboard.append(
+            {
+                "model_type": selected_model_type,
+                "weighted_f1": float(metrics["classification_report"]["weighted avg"]["f1-score"]),
+                "accuracy": float(metrics["test_accuracy"]),
+                "metrics_path": str(candidate_metrics_path),
+                "model_path": str(candidate_model_path),
+                "report_path": str(candidate_report_path),
+            }
+        )
+
+    leaderboard.sort(key=lambda row: row["weighted_f1"], reverse=True)
+    best = leaderboard[0]
+
+    shutil.copyfile(best["model_path"], model_path)
+    shutil.copyfile(best["metrics_path"], metrics_path)
+    shutil.copyfile(best["report_path"], resolved_report_path)
+
+    result = {
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "selected_model_type": best["model_type"],
+        "selection_metric": "weighted_f1",
+        "leaderboard": leaderboard,
+        "active_model_path": str(model_path),
+        "active_metrics_path": str(metrics_path),
+        "active_report_path": str(resolved_report_path),
+    }
+    resolved_comparison_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return result

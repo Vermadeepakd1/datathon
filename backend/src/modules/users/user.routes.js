@@ -1,14 +1,24 @@
 const { Router } = require("express");
-const { validateRequest } = require("../../middleware/validateRequest");
-const { createUserSchema, updateDonorStatusSchema } = require("./user.validation");
+const {
+  validateRequest,
+  validateQuery,
+  validateParams,
+} = require("../../middleware/validateRequest");
+const {
+  createUserSchema,
+  listUsersQuerySchema,
+  userIdParamsSchema,
+  updateDonorStatusSchema,
+} = require("./user.validation");
 const userController = require("./user.controller");
 
 const router = Router();
 
 router.post("/", validateRequest(createUserSchema), userController.createUser);
-router.get("/", userController.listUsers);
+router.get("/", validateQuery(listUsersQuerySchema), userController.listUsers);
 router.patch(
   "/:userId/donor-status",
+  validateParams(userIdParamsSchema),
   validateRequest(updateDonorStatusSchema),
   userController.updateDonorStatus
 );

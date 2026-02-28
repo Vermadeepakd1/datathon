@@ -11,7 +11,7 @@ const createUser = async (req, res, next) => {
 
 const listUsers = async (req, res, next) => {
   try {
-    const users = await userService.listUsers(req.query);
+    const users = await userService.listUsers(req.validatedQuery || req.query);
     res.json({ success: true, data: users });
   } catch (error) {
     next(error);

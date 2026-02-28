@@ -42,26 +42,39 @@ function DiagnosticForm({ onSubmit, loading }) {
   const validate = () => {
     const nextErrors = {};
     fields.forEach((field) => {
-      const numeric = Number(values[field]);
-      const [min, max] = ranges[field];
-      if (!Number.isFinite(numeric)) {
-        nextErrors[field] = `${labelMap[field]} must be a number`;
-      } else if (numeric < min || numeric > max) {
-        nextErrors[field] = `${labelMap[field]} must be between ${min} and ${max}`;
-      }
+      const error = validateField(field, values);
+      if (error) nextErrors[field] = error;
     });
 
-    if (!BLOOD_GROUPS.includes(values.patientBloodGroup)) {
-      nextErrors.patientBloodGroup = "Select a valid blood group";
-    }
+    const bloodError = validateField("patientBloodGroup", values);
+    if (bloodError) nextErrors.patientBloodGroup = bloodError;
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
 
+  const validateField = (field, sourceValues) => {
+    if (field === "patientBloodGroup") {
+      return BLOOD_GROUPS.includes(sourceValues.patientBloodGroup)
+        ? undefined
+        : "Select a valid blood group";
+    }
+
+    const numeric = Number(sourceValues[field]);
+    const [min, max] = ranges[field];
+    if (!Number.isFinite(numeric)) {
+      return `${labelMap[field]} must be a number`;
+    }
+    if (numeric < min || numeric > max) {
+      return `${labelMap[field]} must be between ${min} and ${max}`;
+    }
+    return undefined;
+  };
+
   const handleChange = (field, value) => {
-    setValues((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => ({ ...prev, [field]: undefined }));
+    const nextValues = { ...values, [field]: value };
+    setValues(nextValues);
+    setErrors((prev) => ({ ...prev, [field]: validateField(field, nextValues) }));
   };
 
   const submit = async (event) => {

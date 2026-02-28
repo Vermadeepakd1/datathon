@@ -23,9 +23,24 @@ const createUserSchema = z.object({
     .optional(),
 });
 
+const listUsersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional().default(50),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  search: z.string().trim().max(80).optional(),
+});
+
+const userIdParamsSchema = z.object({
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid userId"),
+});
+
 const updateDonorStatusSchema = z.object({
   donorConsent: z.boolean(),
   donorAvailability: z.enum(["Unavailable", "Ready-to-Donate"]).optional(),
 });
 
-module.exports = { createUserSchema, updateDonorStatusSchema };
+module.exports = {
+  createUserSchema,
+  listUsersQuerySchema,
+  userIdParamsSchema,
+  updateDonorStatusSchema,
+};

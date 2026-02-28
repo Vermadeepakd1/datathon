@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-02-28T09:04:15.883Z",
+  "dataset": {
+    "users": 10000,
+    "medicalLogs": 30000,
+    "readyDonors": 4231
+  },
+  "benchmark": {
+    "iterations": 120,
+    "latencyMs": {
+      "min": 56.26,
+      "avg": 136.98,
+      "p50": 124.47,
+      "p90": 209.44,
+      "p95": 249.69,
+      "p99": 342.87,
+      "max": 418.59
+    },
+    "candidateCount": {
+      "min": 0,
+      "avg": 9.48,
+      "max": 10
+    }
+  },
+  "config": {
+    "iterations": 120,
+    "warmupQueries": 10,
+    "queryTemplate": {
+      "radiusKmRange": [
+        10,
+        35
+      ],
+      "limit": 10,
+      "minHemoglobin": 12.5
+    }
+  }
+}

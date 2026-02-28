@@ -21,7 +21,12 @@ const revealAlertDonorsSchema = z.object({
   donorAnonIds: z.array(z.string().trim().min(3)).optional(),
 });
 
+const alertIdParamsSchema = z.object({
+  alertId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid alertId"),
+});
+
 module.exports = {
   createHemorrhageAlertSchema,
   revealAlertDonorsSchema,
+  alertIdParamsSchema,
 };

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import warnings
 
 import joblib
 import numpy as np
+from sklearn.exceptions import InconsistentVersionWarning
 
 from app.training import FEATURE_ORDER, normalize_runtime_payload_units, train_and_save_model
 
@@ -16,6 +18,16 @@ class ModelRegistry:
         self.dataset_path = dataset_path
         self.artifact: dict[str, Any] | None = None
 
+    def _load_artifact_with_warnings(self) -> tuple[dict[str, Any], bool]:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", InconsistentVersionWarning)
+            artifact = joblib.load(self.model_path)
+
+        version_warning_found = any(
+            isinstance(warning.message, InconsistentVersionWarning) for warning in caught
+        )
+        return artifact, version_warning_found
+
     def load(self) -> None:
         if not self.model_path.exists():
             train_and_save_model(
@@ -23,7 +35,18 @@ class ModelRegistry:
                 metrics_path=self.metrics_path,
                 dataset_path=self.dataset_path,
             )
-        self.artifact = joblib.load(self.model_path)
+        artifact, version_warning = self._load_artifact_with_warnings()
+
+        # Regenerate artifacts under the current sklearn runtime to avoid stale pickle compatibility.
+        if version_warning:
+            train_and_save_model(
+                model_path=self.model_path,
+                metrics_path=self.metrics_path,
+                dataset_path=self.dataset_path,
+            )
+            artifact, _ = self._load_artifact_with_warnings()
+
+        self.artifact = artifact
 
     @property
     def model(self):
@@ -55,6 +78,16 @@ class ModelRegistry:
         if not self.artifact:
             raise RuntimeError("Model artifact is not loaded")
         return self.artifact.get("metrics", {}).get("model_version", "unknown")
+
+    @property
+    def model_type(self) -> str:
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        return str(
+            self.artifact.get("model_type")
+            or self.artifact.get("metrics", {}).get("model_type")
+            or "unknown"
+        )
 
     def to_vector(self, payload: dict[str, float]) -> np.ndarray:
         normalized_payload = normalize_runtime_payload_units(payload)
