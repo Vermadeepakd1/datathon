@@ -2,6 +2,7 @@ import { useState } from "react";
 import DiagnosticForm from "./components/DiagnosticForm";
 import RiskResultCard from "./components/RiskResultCard";
 import SosAlertPanel from "./components/SosAlertPanel";
+import DonorStatusPanel from "./components/DonorStatusPanel";
 import { evaluateDiagnosticInput, triggerHemorrhageAlert } from "./services/api";
 
 function App() {
@@ -92,6 +93,8 @@ function App() {
             </div>
           )}
         </section>
+
+        <DonorStatusPanel />
       </div>
     </main>
   );

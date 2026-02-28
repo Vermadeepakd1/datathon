@@ -1,0 +1,67 @@
+
+
+--- PAGE 1 ---
+Datathon 2.0 — 28 Feb 2026 Problem-Statement-3
+Maternal-Guard & Life-Link
+AI-Driven Maternal Care & Emergency Donor Network
+1. VISION AND SOCIAL CONTEXT
+In rural healthcare sectors, thegolden houris often lost due to a lack of data-driven insights
+and fragmented communication. Maternal-Guard & Life-Link aims to bridge this gap.
+By utilizing theMaternal Health Risk Dataset, this software transitions from reactive
+to proactive care. The secondary goal is to create a digital bridge between academic institutes
+and hospitals, ensuring that healthy, eligible donors are just a click away when postpartum
+hemorrhage occurs.
+2. TECHNICAL ARCHITECTURE & SYSTEM DESIGN
+The solution should be designed as a modular web application consisting of two primary
+components:
+Component A: The ML Risk Predictor
+•Model Selection:Explore classifiers likeRandom Forest, XGBoost, or SVMto han-
+dle the non-linear relationships in maternal vitals.
+•Explainability (XAI):The model must output feature importance. If a patient’s
+systolic BP is the primary risk driver, the UI must highlight this clearly for the doctor.
+•Preprocessing:Handling outliers in heart rate and age within the Kaggle dataset is
+essential for model stability.
+Component B: The Life-Link Donor Network
+•Database Schema:Use SQL or Firebase to manage:
+1.User Profiles:Name, blood group, age, and location.
+2.Medical Logs:Hemoglobin levels, chronic conditions, and timestamps.
+•The Matching Algorithm:Filter by compatibility (e.g., O-negative universal donors)
+and health scores (Hemoglobin>12.5 g/dL).
+3. DETAILED MVP FEATURE SET
+Phase 1: Diagnostic Input (The Health Worker Interface)
+•Input Form:Mobile-responsive entry for Age, Systolic BP, Diastolic BP, Blood Glu-
+cose, Body Temp, and Heart Rate.
+•Real-time Validation:Immediate feedback if values are entered outside of human
+physiological limits.
+Connect with DataWorks on:Instagram — LinkedIn
+
+--- PAGE 2 ---
+Datathon 2.0 — 28 Feb 2026 Problem-Statement-3
+Phase 2: The SOS & Donor Dispatch
+•One-Tap Emergency:A ”Hemorrhage Alert” button that bypasses standard UI
+flows.
+•Automated Filtering:Instant database queries for ”Ready-to-Donate” individuals
+within a specific radius.
+•Privacy Masking:Donor details remain hidden until an Admin explicitly requests
+access.
+4. SECURITY AND ETHICAL CONSIDERATIONS
+•Data Anonymization:High encryption for donor medical histories.
+•Consent Management:A ”Donor Status” toggle for students to mark themselves
+as ”Unavailable” (e.g., during exams) without deleting their profile.
+•Bias Mitigation:Ensure the model does not unfairly penalize specific age groups
+without medical justification.
+5. JUDGING RUBRIC & SUBMISSION REQUIREMENTS
+1.GitHub Repository:Clean, commented code and a detailed README.md.
+2.Live Demo:A 2-minute walkthrough showing risk prediction and donor matching.
+3.Presentation:4–5 slides covering the problem, solution, and tech stack.
+4.Model Report:PDF showing F1-Score, Confusion Matrix, and Feature Importance.
+6. DETAILED SCORING
+Criteria Weight Focus Area
+Reliability 30% Correctness of SOS trigger and donor return.
+ML Accuracy 30% Handling of ”High Risk” categories in Kaggle
+data.
+Scalability 20% Capability to handle 10,000+ district-wide
+donors.
+Design 20% Usability for stressed healthcare workers.
+Innovative solutions save lives. Start building for a safer future.
+Connect with DataWorks on:Instagram — LinkedIn

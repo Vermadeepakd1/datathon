@@ -18,4 +18,16 @@ const listUsers = async (req, res, next) => {
   }
 };
 
-module.exports = { createUser, listUsers };
+const updateDonorStatus = async (req, res, next) => {
+  try {
+    const user = await userService.updateDonorStatus(
+      req.params.userId,
+      req.validated
+    );
+    res.json({ success: true, data: user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { createUser, listUsers, updateDonorStatus };

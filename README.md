@@ -46,3 +46,10 @@ npm run seed
 3. SOS button triggers `/alerts/hemorrhage`.
 4. Matchmaking pipeline returns masked compatible donors by radius + hemoglobin thresholds.
 5. Admin uses token to reveal contacts only when needed.
+
+## Added compliance features
+
+- ML training now exports confusion matrix + feature importance to `ml-service/models/metrics.json`.
+- A model report PDF is auto-generated at `ml-service/models/model_report.pdf`.
+- Medical-log sensitive fields are encrypted at rest before persistence.
+- Donor consent/availability can be toggled via `PATCH /api/v1/users/:userId/donor-status` and frontend UI.

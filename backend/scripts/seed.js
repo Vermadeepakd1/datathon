@@ -1,10 +1,9 @@
 const dns = require("dns");
 const mongoose = require("mongoose");
-const env = require("../src/config/env");
 const { connectDb } = require("../src/config/db");
 const User = require("../src/modules/users/user.model");
 const MedicalLog = require("../src/modules/medicalLogs/medicalLog.model");
-const { createAnonDonorId } = require("../src/utils/anonymize");
+const { createMedicalLog } = require("../src/modules/medicalLogs/medicalLog.service");
 
 // Set Google's DNS servers
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
@@ -56,12 +55,100 @@ const donors = [
   },
 ];
 
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const CONDITION_PROFILES = [
+  [],
+  ["asthma"],
+  ["thyroid"],
+  ["pcos"],
+  ["diabetes"],
+  ["anemia history"],
+  ["hepatitis b"],
+  ["hiv"],
+  ["hepatitis c"],
+];
+
+const FIRST_NAMES = [
+  "Aarohi",
+  "Bhavna",
+  "Charita",
+  "Divya",
+  "Esha",
+  "Farah",
+  "Gauri",
+  "Harini",
+  "Ishita",
+  "Jasmin",
+  "Kavya",
+  "Lina",
+  "Meera",
+  "Naina",
+  "Oviya",
+  "Pallavi",
+  "Rhea",
+  "Sana",
+  "Tanvi",
+  "Vidya",
+];
+
+const LAST_NAMES = [
+  "Patel",
+  "Sharma",
+  "Nair",
+  "Das",
+  "Rao",
+  "Gupta",
+  "Khan",
+  "Bose",
+  "Singh",
+  "Menon",
+];
+
+const buildGeneratedDonors = (count) => {
+  const generated = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const donorIndex = i + 1;
+    const first = FIRST_NAMES[i % FIRST_NAMES.length];
+    const last = LAST_NAMES[Math.floor(i / FIRST_NAMES.length) % LAST_NAMES.length];
+    const bloodGroup = BLOOD_GROUPS[i % BLOOD_GROUPS.length];
+    const donorConsent = i % 7 !== 0;
+    const hemoglobin = Number((11.4 + ((i * 17) % 39) / 10).toFixed(1));
+    const chronicConditions = CONDITION_PROFILES[i % CONDITION_PROFILES.length];
+
+    const longitude = Number((-74.02 + (i % 12) * 0.01).toFixed(6));
+    const latitude = Number((40.66 + Math.floor(i / 12) * 0.012 + (i % 3) * 0.002).toFixed(6));
+
+    generated.push({
+      name: `${first} ${last} ${String(donorIndex).padStart(2, "0")}`,
+      bloodGroup,
+      age: 19 + ((i * 3) % 42), // 19-60
+      donorConsent,
+      donorAvailability: donorConsent ? "Ready-to-Donate" : "Unavailable",
+      contact: {
+        phone: `5552${String(100000 + donorIndex).slice(-6)}`,
+        email: `donor${String(donorIndex).padStart(2, "0")}@example.com`,
+      },
+      location: {
+        type: "Point",
+        coordinates: [longitude, latitude],
+      },
+      hemoglobin,
+      chronicConditions,
+    });
+  }
+
+  return generated;
+};
+
+const allDonors = [...donors, ...buildGeneratedDonors(60)];
+
 const run = async () => {
   await connectDb();
   await User.deleteMany({});
   await MedicalLog.deleteMany({});
 
-  for (const donor of donors) {
+  for (const donor of allDonors) {
     const user = await User.create({
       name: donor.name,
       bloodGroup: donor.bloodGroup,
@@ -72,17 +159,16 @@ const run = async () => {
       location: donor.location,
     });
 
-    await MedicalLog.create({
-      userRef: user._id,
-      anonDonorId: createAnonDonorId(user._id, env.anonymizationSalt),
+    await createMedicalLog({
+      userId: String(user._id),
       hemoglobin: donor.hemoglobin,
-      chronicConditions: donor.chronicConditions,
+      chronicConditions: donor.chronicConditions || [],
       recordedAt: new Date(),
     });
   }
 
   // eslint-disable-next-line no-console
-  console.log("Seeded users and medical logs.");
+  console.log(`Seeded ${allDonors.length} users and medical logs.`);
   await mongoose.connection.close();
 };
 

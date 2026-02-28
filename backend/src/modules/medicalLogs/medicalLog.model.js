@@ -22,12 +22,26 @@ const medicalLogSchema = new Schema(
       min: 0,
       max: 25,
     },
-    chronicConditions: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    hemoglobinEncrypted: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    chronicConditionsEncrypted: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    chronicConditionCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    hasDisqualifyingCondition: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     recordedAt: {
       type: Date,
       default: Date.now,
@@ -39,5 +53,6 @@ const medicalLogSchema = new Schema(
 
 medicalLogSchema.index({ anonDonorId: 1, recordedAt: -1 });
 medicalLogSchema.index({ userRef: 1, recordedAt: -1 });
+medicalLogSchema.index({ hasDisqualifyingCondition: 1, recordedAt: -1 });
 
 module.exports = mongoose.model("MedicalLog", medicalLogSchema);

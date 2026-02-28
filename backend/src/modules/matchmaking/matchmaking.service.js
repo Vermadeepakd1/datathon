@@ -1,5 +1,4 @@
 const User = require("../users/user.model");
-const { hasDisqualifyingCondition } = require("../medicalLogs/medicalLog.service");
 const { createAnonDonorId } = require("../../utils/anonymize");
 const env = require("../../config/env");
 const {
@@ -11,10 +10,10 @@ const { HttpError } = require("../../utils/httpError");
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-const computeHealthScore = (hemoglobin, distanceKm, chronicConditions = []) => {
+const computeHealthScore = (hemoglobin, distanceKm, chronicConditionCount = 0) => {
   const hbBoost = clamp((hemoglobin - 12.5) * 8, 0, 30);
   const distanceBoost = clamp(20 - distanceKm, 0, 20);
-  const conditionPenalty = clamp(chronicConditions.length * 2, 0, 10);
+  const conditionPenalty = clamp(chronicConditionCount * 2, 0, 10);
   return clamp(Math.round(50 + hbBoost + distanceBoost - conditionPenalty), 0, 100);
 };
 
@@ -45,7 +44,8 @@ const buildBasePipeline = (payload, compatibleGroups) => [
             _id: 0,
             anonDonorId: 1,
             hemoglobin: 1,
-            chronicConditions: 1,
+            chronicConditionCount: 1,
+            hasDisqualifyingCondition: 1,
             recordedAt: 1,
           },
         },
@@ -72,8 +72,7 @@ const buildBasePipeline = (payload, compatibleGroups) => [
 ];
 
 const toDonorCandidate = (doc) => {
-  const chronicConditions = doc.latestMedicalLog.chronicConditions || [];
-  if (hasDisqualifyingCondition(chronicConditions)) {
+  if (doc.latestMedicalLog.hasDisqualifyingCondition) {
     return null;
   }
 
@@ -83,7 +82,7 @@ const toDonorCandidate = (doc) => {
   const healthScore = computeHealthScore(
     doc.latestMedicalLog.hemoglobin,
     distanceKm,
-    chronicConditions
+    doc.latestMedicalLog.chronicConditionCount || 0
   );
 
   return {

@@ -6,7 +6,7 @@ from typing import Any
 import joblib
 import numpy as np
 
-from app.training import FEATURE_ORDER, train_and_save_model
+from app.training import FEATURE_ORDER, normalize_runtime_payload_units, train_and_save_model
 
 
 class ModelRegistry:
@@ -57,7 +57,11 @@ class ModelRegistry:
         return self.artifact.get("metrics", {}).get("model_version", "unknown")
 
     def to_vector(self, payload: dict[str, float]) -> np.ndarray:
-        vector = np.array([[float(payload[feature]) for feature in self.feature_order]], dtype=float)
+        normalized_payload = normalize_runtime_payload_units(payload)
+        vector = np.array(
+            [[float(normalized_payload[feature]) for feature in self.feature_order]],
+            dtype=float,
+        )
         for index, feature in enumerate(self.feature_order):
             lower, upper = self.clip_bounds[feature]
             vector[:, index] = np.clip(vector[:, index], lower, upper)
@@ -68,9 +72,14 @@ class ModelRegistry:
         predicted_class = int(np.argmax(probabilities))
         risk_level = self.risk_labels[predicted_class]
         risk_score = float(np.round(probabilities[predicted_class] * 100, 2))
+        class_probabilities = {
+            self.risk_labels.get(index, str(index)): float(np.round(probability * 100, 2))
+            for index, probability in enumerate(probabilities)
+        }
         return {
             "risk_level": risk_level,
             "risk_score": risk_score,
             "predicted_class_index": predicted_class,
+            "class_probabilities": class_probabilities,
             "probabilities": probabilities,
         }

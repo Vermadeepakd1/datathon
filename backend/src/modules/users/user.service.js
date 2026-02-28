@@ -1,4 +1,6 @@
 const User = require("./user.model");
+const mongoose = require("mongoose");
+const { HttpError } = require("../../utils/httpError");
 
 const createUser = async (payload) => {
   const normalizedPayload = {
@@ -19,4 +21,25 @@ const listUsers = async (query) => {
   return users;
 };
 
-module.exports = { createUser, listUsers };
+const updateDonorStatus = async (userId, payload) => {
+  if (!mongoose.isValidObjectId(userId)) {
+    throw new HttpError(400, "Invalid userId");
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new HttpError(404, "User not found");
+  }
+
+  user.donorConsent = payload.donorConsent;
+  if (payload.donorConsent === false) {
+    user.donorAvailability = "Unavailable";
+  } else {
+    user.donorAvailability = payload.donorAvailability || "Ready-to-Donate";
+  }
+
+  await user.save();
+  return user;
+};
+
+module.exports = { createUser, listUsers, updateDonorStatus };

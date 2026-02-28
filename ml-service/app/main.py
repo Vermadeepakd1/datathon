@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from app.clinical_rules import apply_clinical_safety_override
 from app.explainability import ExplainabilityEngine
 from app.model_registry import ModelRegistry
 from app.schemas import PredictRequest, PredictResponse
@@ -48,11 +49,16 @@ def predict(payload: PredictRequest) -> PredictResponse:
     vector = registry.to_vector(payload.model_dump())
     prediction = registry.predict(vector)
     feature_importance = explainer.explain_single(vector, prediction["predicted_class_index"])
+    prediction, feature_importance, safety_override = apply_clinical_safety_override(
+        payload.model_dump(), prediction, feature_importance
+    )
 
     return PredictResponse(
         risk_level=prediction["risk_level"],
         risk_score=prediction["risk_score"],
         predicted_class_index=prediction["predicted_class_index"],
+        class_probabilities=prediction["class_probabilities"],
         feature_importance=feature_importance,
+        safety_override=safety_override,
         model_version=registry.model_version,
     )

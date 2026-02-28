@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -17,9 +19,26 @@ class FeatureImportanceItem(BaseModel):
     importance: float
 
 
+class SafetyTriggerItem(BaseModel):
+    feature: str
+    observed: float
+    threshold: float
+    direction: str
+    rationale: str
+
+
+class SafetyOverride(BaseModel):
+    applied: bool
+    reason: str
+    primary_driver: str
+    triggers: list[SafetyTriggerItem]
+
+
 class PredictResponse(BaseModel):
     risk_level: str
     risk_score: float
     predicted_class_index: int
+    class_probabilities: dict[str, float]
     feature_importance: list[FeatureImportanceItem]
+    safety_override: Optional[SafetyOverride] = None
     model_version: str

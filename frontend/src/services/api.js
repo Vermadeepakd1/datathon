@@ -15,4 +15,14 @@ export const triggerHemorrhageAlert = async (payload) => {
   return response.data.data;
 };
 
+export const listUsers = async (limit = 20) => {
+  const response = await api.get(`/users?limit=${limit}`);
+  return response.data.data;
+};
+
+export const updateDonorStatus = async (userId, payload) => {
+  const response = await api.patch(`/users/${userId}/donor-status`, payload);
+  return response.data.data;
+};
+
 export default api;

@@ -23,4 +23,9 @@ const createUserSchema = z.object({
     .optional(),
 });
 
-module.exports = { createUserSchema };
+const updateDonorStatusSchema = z.object({
+  donorConsent: z.boolean(),
+  donorAvailability: z.enum(["Unavailable", "Ready-to-Donate"]).optional(),
+});
+
+module.exports = { createUserSchema, updateDonorStatusSchema };

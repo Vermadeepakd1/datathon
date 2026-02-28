@@ -8,9 +8,10 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 
+from app.reporting import generate_model_report_pdf
 
 FEATURE_ORDER = [
     "age",
@@ -23,6 +24,61 @@ FEATURE_ORDER = [
 
 RISK_MAP = {"low": 0, "medium": 1, "high": 2}
 INVERSE_RISK_MAP = {value: key for key, value in RISK_MAP.items()}
+
+
+def _normalize_risk_label(raw_label: object) -> str | None:
+    label = str(raw_label).strip().lower()
+    if not label:
+        return None
+
+    normalized = " ".join(label.replace("-", " ").replace("_", " ").split())
+    alias_map = {
+        "low": "low",
+        "low risk": "low",
+        "mid": "medium",
+        "medium": "medium",
+        "moderate": "medium",
+        "mid risk": "medium",
+        "medium risk": "medium",
+        "moderate risk": "medium",
+        "high": "high",
+        "high risk": "high",
+        "severe": "high",
+        "severe risk": "high",
+    }
+    return alias_map.get(normalized)
+
+
+def _normalize_blood_glucose_series(series: pd.Series) -> tuple[pd.Series, str]:
+    # Kaggle maternal dataset BS is often in mmol/L (typically 6-19).
+    # Canonical model unit is mg/dL; convert when values indicate mmol/L scale.
+    finite = pd.to_numeric(series, errors="coerce")
+    median_value = float(finite.median(skipna=True))
+    if np.isfinite(median_value) and median_value <= 30:
+        return finite * 18.0, "mmol_to_mgdl"
+    return finite, "mgdl"
+
+
+def _normalize_body_temp_series(series: pd.Series) -> tuple[pd.Series, str]:
+    finite = pd.to_numeric(series, errors="coerce")
+    median_value = float(finite.median(skipna=True))
+    if np.isfinite(median_value) and 20 <= median_value <= 45:
+        return (finite * 9.0 / 5.0) + 32.0, "celsius_to_fahrenheit"
+    return finite, "fahrenheit"
+
+
+def normalize_runtime_payload_units(payload: dict[str, float]) -> dict[str, float]:
+    normalized = dict(payload)
+
+    blood_glucose = float(normalized["blood_glucose"])
+    if 0 < blood_glucose <= 30:
+        normalized["blood_glucose"] = blood_glucose * 18.0
+
+    body_temp = float(normalized["body_temp"])
+    if 20 <= body_temp <= 45:
+        normalized["body_temp"] = (body_temp * 9.0 / 5.0) + 32.0
+
+    return normalized
 
 
 def _clip_bounds_from_iqr(df: pd.DataFrame) -> dict[str, tuple[float, float]]:
@@ -95,22 +151,51 @@ def _load_or_create_dataset(dataset_path: Path) -> pd.DataFrame:
         missing = [column for column in FEATURE_ORDER + ["risk_level"] if column not in renamed.columns]
         if missing:
             raise ValueError(f"Dataset is missing required columns: {missing}")
-        return renamed[FEATURE_ORDER + ["risk_level"]].copy()
-    return _generate_dummy_dataset()
+        normalized = renamed[FEATURE_ORDER + ["risk_level"]].copy()
+        normalized["blood_glucose"], glucose_transform = _normalize_blood_glucose_series(
+            normalized["blood_glucose"]
+        )
+        normalized["body_temp"], temp_transform = _normalize_body_temp_series(
+            normalized["body_temp"]
+        )
+        normalized.attrs["unit_transforms"] = {
+            "blood_glucose": glucose_transform,
+            "body_temp": temp_transform,
+        }
+        return normalized
+    generated = _generate_dummy_dataset()
+    generated.attrs["unit_transforms"] = {
+        "blood_glucose": "mgdl",
+        "body_temp": "fahrenheit",
+    }
+    return generated
 
 
 def _age_group_weights(ages: pd.Series) -> np.ndarray:
-    bins = pd.cut(ages, bins=[0, 19, 35, 60], labels=["<=19", "20-35", "36-60"], include_lowest=True)
-    counts = bins.value_counts().to_dict()
+    bins = pd.cut(
+        ages, bins=[-np.inf, 19, 35, np.inf], labels=["<=19", "20-35", "36+"], include_lowest=True
+    )
+    counts = bins.value_counts(dropna=True).to_dict()
+    if not counts:
+        return np.ones(len(ages))
+
     n_groups = len(counts)
     total = len(ages)
-    return np.array([total / (n_groups * counts[group]) for group in bins])
+    weights = []
+    for group in bins:
+        if pd.isna(group):
+            weights.append(1.0)
+        else:
+            weights.append(total / (n_groups * counts[group]))
+    return np.array(weights, dtype=float)
 
 
 def _age_group_accuracy(ages: pd.Series, true_y: np.ndarray, pred_y: np.ndarray) -> dict[str, float]:
-    bins = pd.cut(ages, bins=[0, 19, 35, 60], labels=["<=19", "20-35", "36-60"], include_lowest=True)
+    bins = pd.cut(
+        ages, bins=[-np.inf, 19, 35, np.inf], labels=["<=19", "20-35", "36+"], include_lowest=True
+    )
     metrics: dict[str, float] = {}
-    for group in bins.unique():
+    for group in bins.dropna().unique():
         mask = bins == group
         if int(mask.sum()) == 0:
             continue
@@ -125,10 +210,18 @@ def train_and_save_model(
     random_state: int = 42,
 ) -> dict:
     df = _load_or_create_dataset(dataset_path)
-    df["risk_target"] = df["risk_level"].str.lower().map(RISK_MAP)
+    df["risk_level_normalized"] = df["risk_level"].map(_normalize_risk_label)
+    df["risk_target"] = df["risk_level_normalized"].map(RISK_MAP)
 
     if df["risk_target"].isna().any():
-        raise ValueError("Found unknown risk levels in dataset. Allowed: low, medium, high")
+        unknown_labels = sorted(
+            {str(value) for value in df.loc[df["risk_target"].isna(), "risk_level"].dropna().unique()}
+        )
+        raise ValueError(
+            "Found unknown risk levels in dataset. "
+            "Allowed canonical classes are low/medium/high. "
+            f"Unknown values found: {unknown_labels}"
+        )
 
     X = df[FEATURE_ORDER].copy()
     y = df["risk_target"].astype(int).to_numpy()
@@ -153,6 +246,7 @@ def train_and_save_model(
 
     predictions = model.predict(x_test)
     probabilities = model.predict_proba(x_test)
+    matrix = confusion_matrix(y_test, predictions, labels=[0, 1, 2])
     test_accuracy = float(accuracy_score(y_test, predictions))
 
     report = classification_report(
@@ -162,13 +256,35 @@ def train_and_save_model(
         target_names=[INVERSE_RISK_MAP[0], INVERSE_RISK_MAP[1], INVERSE_RISK_MAP[2]],
     )
     age_bias_metrics = _age_group_accuracy(x_test["age"], y_test, predictions)
+    raw_importances = getattr(model, "feature_importances_", np.zeros(len(FEATURE_ORDER)))
+    total_importance = float(np.sum(raw_importances)) or 1.0
+    feature_importance = [
+        {"feature": feature, "importance": float(round(value / total_importance, 4))}
+        for feature, value in zip(FEATURE_ORDER, raw_importances)
+    ]
+    feature_importance.sort(key=lambda item: item["importance"], reverse=True)
+
+    unit_transforms = df.attrs.get("unit_transforms", {})
 
     metrics = {
         "model_version": datetime.now(tz=timezone.utc).isoformat(),
         "dataset_rows": int(len(df)),
         "test_accuracy": round(test_accuracy, 4),
+        "feature_units": {
+            "blood_glucose": "mg/dL",
+            "body_temp": "F",
+            "detected_transforms": {
+                "blood_glucose": unit_transforms.get("blood_glucose", "unknown"),
+                "body_temp": unit_transforms.get("body_temp", "unknown"),
+            },
+        },
         "age_group_accuracy": age_bias_metrics,
         "classification_report": report,
+        "confusion_matrix": {
+            "labels": ["low", "medium", "high"],
+            "values": matrix.tolist(),
+        },
+        "feature_importance": feature_importance,
     }
 
     artifact = {
@@ -184,4 +300,10 @@ def train_and_save_model(
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(artifact, model_path)
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    generate_model_report_pdf(
+        output_path=model_path.parent / "model_report.pdf",
+        metrics=metrics,
+        confusion_matrix_values=matrix.tolist(),
+        feature_importance=feature_importance,
+    )
     return metrics

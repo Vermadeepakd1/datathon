@@ -2,6 +2,7 @@ const MedicalLog = require("./medicalLog.model");
 const User = require("../users/user.model");
 const env = require("../../config/env");
 const { createAnonDonorId } = require("../../utils/anonymize");
+const { encryptMedicalPayload } = require("../../utils/medicalEncryption");
 const { HttpError } = require("../../utils/httpError");
 
 const DISQUALIFYING_CONDITIONS = new Set(["hiv", "hepatitis b", "hepatitis c"]);
@@ -23,11 +24,23 @@ const createMedicalLog = async (payload) => {
   const disqualified = hasDisqualifyingCondition(chronicConditions);
   const isHemoglobinEligible = payload.hemoglobin >= 12.5;
 
+  const encryptedHemoglobin = encryptMedicalPayload(
+    payload.hemoglobin,
+    env.medicalEncryptionKey
+  );
+  const encryptedConditions = encryptMedicalPayload(
+    chronicConditions,
+    env.medicalEncryptionKey
+  );
+
   const log = await MedicalLog.create({
     userRef: user._id,
     anonDonorId,
     hemoglobin: payload.hemoglobin,
-    chronicConditions,
+    hemoglobinEncrypted: encryptedHemoglobin,
+    chronicConditionsEncrypted: encryptedConditions,
+    chronicConditionCount: chronicConditions.length,
+    hasDisqualifyingCondition: disqualified,
     recordedAt: payload.recordedAt || new Date(),
   });
 
@@ -37,7 +50,14 @@ const createMedicalLog = async (payload) => {
       : "Unavailable";
   await user.save();
 
-  return log;
+  return {
+    id: log._id,
+    anonDonorId,
+    hemoglobin: log.hemoglobin,
+    chronicConditionCount: log.chronicConditionCount,
+    hasDisqualifyingCondition: log.hasDisqualifyingCondition,
+    recordedAt: log.recordedAt,
+  };
 };
 
 module.exports = { createMedicalLog, hasDisqualifyingCondition };
