@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import joblib
+import numpy as np
+
+from app.training import FEATURE_ORDER, train_and_save_model
+
+
+class ModelRegistry:
+    def __init__(self, model_path: Path, metrics_path: Path, dataset_path: Path) -> None:
+        self.model_path = model_path
+        self.metrics_path = metrics_path
+        self.dataset_path = dataset_path
+        self.artifact: dict[str, Any] | None = None
+
+    def load(self) -> None:
+        if not self.model_path.exists():
+            train_and_save_model(
+                model_path=self.model_path,
+                metrics_path=self.metrics_path,
+                dataset_path=self.dataset_path,
+            )
+        self.artifact = joblib.load(self.model_path)
+
+    @property
+    def model(self):
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        return self.artifact["model"]
+
+    @property
+    def feature_order(self) -> list[str]:
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        return list(self.artifact.get("feature_order", FEATURE_ORDER))
+
+    @property
+    def clip_bounds(self) -> dict[str, tuple[float, float]]:
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        return self.artifact["clip_bounds"]
+
+    @property
+    def risk_labels(self) -> dict[int, str]:
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        raw = self.artifact["risk_labels"]
+        return {int(key): value for key, value in raw.items()}
+
+    @property
+    def model_version(self) -> str:
+        if not self.artifact:
+            raise RuntimeError("Model artifact is not loaded")
+        return self.artifact.get("metrics", {}).get("model_version", "unknown")
+
+    def to_vector(self, payload: dict[str, float]) -> np.ndarray:
+        vector = np.array([[float(payload[feature]) for feature in self.feature_order]], dtype=float)
+        for index, feature in enumerate(self.feature_order):
+            lower, upper = self.clip_bounds[feature]
+            vector[:, index] = np.clip(vector[:, index], lower, upper)
+        return vector
+
+    def predict(self, vector: np.ndarray) -> dict[str, Any]:
+        probabilities = self.model.predict_proba(vector)[0]
+        predicted_class = int(np.argmax(probabilities))
+        risk_level = self.risk_labels[predicted_class]
+        risk_score = float(np.round(probabilities[predicted_class] * 100, 2))
+        return {
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "predicted_class_index": predicted_class,
+            "probabilities": probabilities,
+        }
