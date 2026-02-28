@@ -3,6 +3,10 @@
 Datathon 2.0 submission for:
 `Maternal-Guard & Life-Link: AI-Driven Maternal Care & Emergency Donor Network`
 
+## Web App Screenshot
+
+![Maternal-Guard Web App](screenshots/webapp.png)
+
 ## Stack
 
 - `frontend/`: React (Vite) + Tailwind CSS
