@@ -68,5 +68,10 @@ Thumbs.db
 .temp/
 *.tmp
 
+# Large files (videos, etc.)
+*.mp4
+*.avi
+*.mov
+*.mkv
 
 .env
